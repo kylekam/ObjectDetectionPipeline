@@ -14,11 +14,11 @@ def getListOfVideos(_dir):
     print("Numer of video files: ", len(video_list))
     return video_list
 
-def isStereo(_frame):
+def isFrameStereo(_frame):
     """Checks if image is stereo"""
     return _frame.shape[1] > _frame.shape[0]*2
 
-def isStereo(_width, _height):
+def isDimsStereo(_width, _height):
     """Check if image is stereo"""
     return _width > _height*2
 
@@ -46,11 +46,12 @@ def getFrameFromVideo(_videoName, _frameRate, _outputDir):
                 break
 
             # if two images then grab left
-            if isStereo(frame):
+            if isFrameStereo(frame):
                 frame = getLeftImage(frame)
 
             # output images into external folder
-            cv2.imwrite(_outputDir + splitext(_videoName)[0] + "_FRM_" + f'{frame_num:06}' + "_of_" + f'{int(cap.get(cv2.CAP_PROP_FRAME_COUNT)):06}' + ".jpg",frame)
+            vidName = splitext(basename(_videoName))[0]
+            cv2.imwrite(_outputDir + vidName + "_FRM_" + f'{frame_num:06}' + "_of_" + f'{int(cap.get(cv2.CAP_PROP_FRAME_COUNT)):06}' + ".jpg",frame)
     else:
         print("Failed to open ", _videoName)
 

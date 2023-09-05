@@ -4,9 +4,10 @@ import onnxruntime as ort
 import VideoUtils
 from PIL import Image
 
-VIDEO_PATH = "F:\\kyle_files\\repos\\RefineImageDataset\\used_videos\\4828b9ac-f90f-4dc7-bab0-5264dcdbf1f5.avi"
+# VIDEO_PATH = "F:\\kyle_files\\repos\\RefineImageDataset\\used_videos\\4828b9ac-f90f-4dc7-bab0-5264dcdbf1f5.avi"
+VIDEO_PATH = "C:\\Users\\kkam\\repos\\kyle_python_scripts\\videos\\Default_Surgeon_Jun_02,_2023_08.48.21_AM.avi"
 MODEL_PATH = ".\\models\\tool_tip_v4.onnx"
-OUTPUT_PATH = ".\\videos\\4828b9ac-f90f-4dc7-bab0-5264dcdbf1f5_PROCESSED.mp4"
+OUTPUT_PATH = ".\\videos\\Default_Surgeon_Jun_02,_2023_08.48.21_AM_PROCESSED.mp4"
 CONF_THRESHOLD = 0.5
 IOU_THRESHOLD = 0.5
 
@@ -83,8 +84,11 @@ def initONNX():
     options.log_severity_level = 3  # Suppress ONNX Runtime log messages
 
     if cuda_device is not None:
+        print("Using GPU")
         options.add_session_config_entry('session.use_cuda', '1')
         options.add_session_config_entry('session.gpu_device_id', cuda_device)
+    else:
+        print("Using CPU")
 
     providers = [("CUDAExecutionProvider", {"cudnn_conv_use_max_workspace": '1'})]
 

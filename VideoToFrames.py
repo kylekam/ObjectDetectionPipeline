@@ -5,8 +5,8 @@ import glob
 import shutil
 import cv2
 import VideoUtils
-VIDEO_DIR = "F:\\kyle_files\\image_labeling_yolov8\\AnimalLabJune2023"
-IMAGE_DIR = "F:\\kyle_files\\image_labeling_yolov8\\AnimalLabJune2023\\raw_images\\"
+VIDEO_DIR = "E:\\Videos\\anonymized\\"
+IMAGE_DIR = "E:\\Videos\\raw_frames\\"
 FRAME_RATE = 20
 
 def main():
@@ -16,7 +16,7 @@ def main():
     # get frames from videos
     for video_path in video_list:
         video_name = basename(video_path)
-        VideoUtils.getFrameFromVideo(video_name, FRAME_RATE, IMAGE_DIR)
+        VideoUtils.getFrameFromVideo(video_path, FRAME_RATE, IMAGE_DIR)
 
 if __name__ == "__main__":
     main()
