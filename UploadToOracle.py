@@ -1,19 +1,32 @@
 import os
 import oci
-import subprocess
 import glob
-from multiprocessing import Process
+import multiprocessing as mp
 import math
 from tqdm import tqdm
+import json
+import psutil
+
+from oci.data_labeling_service_dataplane.data_labeling_client import DataLabelingClient
+from oci.data_labeling_service.data_labeling_management_client import DataLabelingManagementClient
+from oci.data_labeling_service.models import ObjectStorageSourceDetails
+from oci.data_labeling_service.models import DatasetFormatDetails
+from oci.data_labeling_service.models import LabelSet
+from oci.data_labeling_service.models import Label
+from oci.data_labeling_service.models import CreateDatasetDetails
 
 IMAGE_DIR = "F:\\kyle_files\\Tip_Tracking_Stuff"
-
 BATCH_SIZE = 1000
+MISSED_FILES_JSON = "missed_files.json"
 
+# Number of max processes allowed at a time
+CONCURRENCY= 7
 
-# oci os object bulk-upload --namespace idrvtcm33fob --bucket-name ???? --src-dir ????
 
 def main():
+    sema = mp.BoundedSemaphore(CONCURRENCY)
+    checkNumThreadsAndCPUs()
+
     # OCI Setup
     config = oci.config.from_file("~/.oci/config", "DEFAULT")
     compartment_id = "ocid1.compartment.oc1..aaaaaaaabgnhnke36wn27m7ar5sua34hbbzugxvniyymjvl4iuhkrzsemidq"
@@ -40,10 +53,10 @@ def main():
         bucket_num += 1
         bucket_name = "batch_" + f"{bucket_num:03d}"
         buckets.append(bucket_name)
-        
+
         if bucket_name not in existing_buckets:
             # Create the bucket
-            object_storage_client.create_bucket(namespace_name=namespace_name, 
+            object_storage_client.create_bucket(namespace_name=namespace_name,
                                                 create_bucket_details=oci.object_storage.models.CreateBucketDetails(
                                                     name=bucket_name,
                                                     compartment_id=compartment_id,
@@ -53,49 +66,59 @@ def main():
         else:
             print(f"Bucket '{bucket_name}' already exists in compartment")
 
-    # deleteAllObjectsInBucket(object_storage_client, namespace_name, buckets[0])
+    # # Uncomment this to delete objects from bucket
+    # deleteAllObjectsInBucket(object_storage_client, namespace_name, buckets[4])
     # exit()
 
-    # Upload images
+    # # Upload images
+    # for i in range(3,num_buckets):
+    #     start_idx = BATCH_SIZE*i
+    #     end_idx = BATCH_SIZE*(i+1) if BATCH_SIZE*(i+1) < num_files else num_files-1 # ensures that we don't go out of range
+    #     filebatch = all_files[start_idx:end_idx]
+    #     parallelUpload(filebatch, buckets[i], namespace_name, config, sema)
+
+    # Find which images are missing
     missed = {}
     for i in range(num_buckets):
-        # filebatch = all_files[BATCH_SIZE*i:BATCH_SIZE*(i+1)]
-        filebatch = all_files[BATCH_SIZE*i:BATCH_SIZE*(i+1)]
-        parallelUpload(filebatch, buckets[i], namespace_name, config)
-        
+        start_idx = BATCH_SIZE*i
+        end_idx = BATCH_SIZE*(i+1) if BATCH_SIZE*(i+1) < num_files else num_files-1 # ensures that we don't go out of range
+        filebatch = all_files[start_idx:end_idx]
+
         # Verify that all files were uploaded
-        objects = getObjectNamesInBucket(object_storage_client, namespace_name, buckets[0])
+        objects = getObjectNamesInBucket(object_storage_client, namespace_name, buckets[i])
         missed[buckets[i]] = []
         for file_name in filebatch:
             if os.path.basename(file_name) not in objects:
                 missed[buckets[i]].append(file_name)
-        print(f"Files missed: '{missed[buckets[i]]}'")
-        break
+        print(f"Files missed: '{len(missed[buckets[i]])}'")
 
-
+    # Write missed files to json
+    with open(MISSED_FILES_JSON, "w") as outfile:
+        outfile.write(json.dumps(missed, indent=4))
 
     # 5. Bonus: Create excel sheet
 
-def parallelUpload(_src_list: list, _dst_bucket: str, _namespace_name: str, _config):
+def parallelUpload(_src_list: list, _dst_bucket: str, _namespace_name: str, _config, _sema):
     """
-    parallelUpload will 
+    parallelUpload will upload files concurrently to Oracle buckets.
     """
 
     # print("Starting upload for {}".format(_dst_bucket))
     proc_list = []
-    for file_path in _src_list:
+    for file_path in tqdm(_src_list, desc=f"Uploading {_dst_bucket}"):
+        _sema.acquire()
         # print("Starting upload for {}".format(file_path))
-        p = Process(target=upload_to_object_storage, args=(_config,
+        p = mp.Process(target=upload_to_object_storage, args=(_config,
                                                         _namespace_name,
                                                         _dst_bucket,
-                                                        file_path))
+                                                        file_path,
+                                                        _sema))
         p.start()
         proc_list.append(p)
 
     # Upload files
-    for job in tqdm(proc_list, desc=f"Uploading {_dst_bucket}"):
+    for job in tqdm(proc_list, desc=f"Verifying {_dst_bucket}"):
         job.join()
-    
 
 def getAllBucketNames(_object_storage_client, _namespace_name, _compartment_id):
     # List the buckets in the compartment
@@ -104,7 +127,7 @@ def getAllBucketNames(_object_storage_client, _namespace_name, _compartment_id):
     bucket_list = []
     for bucket in buckets.data:
         bucket_list.append(bucket.name)
-    
+
     return bucket_list
 
 def deleteAllObjectsInBucket(_object_storage_client, _namespace_name, _bucket_name):
@@ -135,7 +158,7 @@ def getObjectNamesInBucket(_object_storage_client, _namespace_name, _bucket_name
         names.append(obj.name)
     return names
 
-def upload_to_object_storage(config, namespace, bucket, path):
+def upload_to_object_storage(_config, _namespace, _bucket, _path, _sema):
     """
     upload_to_object_storage will upload a file to an object storage bucket.
     This function is intended to be run as a separate process.  The client is
@@ -148,14 +171,52 @@ def upload_to_object_storage(config, namespace, bucket, path):
     :param path: path to file to upload to object storage
     :rtype: None
     """
-    with open(path, "rb") as in_file:
-        name = os.path.basename(path)
-        ostorage = oci.object_storage.ObjectStorageClient(config)
-        ostorage.put_object(namespace,
-                            bucket,
+    with open(_path, "rb") as in_file:
+        name = os.path.basename(_path)
+        ostorage = oci.object_storage.ObjectStorageClient(_config)
+        ostorage.put_object(_namespace,
+                            _bucket,
                             name,
                             in_file)
         # print("Finished uploading {}".format(name))
+    _sema.release()
+
+def init_dls_cp_client(_config, _service_endpoint):
+    dls_client = DataLabelingManagementClient(_config,
+                                              service_endpoint=_service_endpoint)
+    return dls_client
+
+def init_dls_dp_client(_config, _service_endpoint):
+    dls_client = DataLabelingClient(_config,
+                                    service_endpoint=_service_endpoint)
+    return dls_client
+
+def createDatasetFromBucket(_config, _compartment_id, _namespace, _bucket):
+    format_type = "IMAGE"
+    annotation_format = "BOUNDING_BOX"
+    label1 = "tooltip"
+    label2 = "zack"
+    
+    service_endpoint_cp = "https://dlsprod-cp.us-phoenix-1.oci.oraclecloud.com"
+    dls_client = init_dls_cp_client(_config, service_endpoint_cp)
+    
+    dataset_source_details_obj = ObjectStorageSourceDetails(namespace=_namespace, bucket=_bucket)
+    dataset_format_details_obj = DatasetFormatDetails(format_type=format_type)
+    label_set_obj = LabelSet(items=[Label(name=label1), Label(name=label2)])
+    create_dataset_obj = CreateDatasetDetails(compartment_id=_compartment_id, annotation_format=annotation_format,
+                                            dataset_source_details=dataset_source_details_obj,
+                                            dataset_format_details=dataset_format_details_obj,
+                                            label_set=label_set_obj)
+    try:
+        response = dls_client.create_dataset(create_dataset_details=create_dataset_obj)
+    except Exception as error:
+        response = error
+
+def checkNumThreadsAndCPUs():
+    total_threads = psutil.cpu_count()/psutil.cpu_count(logical=False)
+    print('You can run {} processes per CPU core simultaneously'.format(total_threads))
+    total_cpu = mp.cpu_count()
+    print(f"You have {total_cpu} CPU accessible")
 
 if __name__ == "__main__":
     main()
