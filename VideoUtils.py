@@ -55,7 +55,6 @@ def getFrameFromVideo(_videoName, _frameRate, _outputDir):
     else:
         print("Failed to open ", _videoName)
 
-
 def getList(dict):
     list = []
     for key in dict.keys():
