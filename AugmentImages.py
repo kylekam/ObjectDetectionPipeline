@@ -1,8 +1,11 @@
 import albumentations as A
+import imgaug as ia
+from imgaug.augmentables.bbs import BoundingBox, BoundingBoxesOnImage
 import cv2
 import os
 import numpy as np
 
+# https://github.com/aleju/imgaug
 # IMAGE_DIR = "E:\\Videos\\deletethis_test"
 # IMAGE_NAME = "1cf27d42-1dba-4738-b09f-fa4ea341c936_FRM_000000_of_036004"
 # LABEL_DIR = "E:\\Videos\\deletethis_test"
@@ -12,6 +15,21 @@ IMAGE_NAME = "1cf27d42-1dba-4738-b09f-fa4ea341c936_FRM_004700_of_036004"
 LABEL_DIR = "C:\\Users\\kkam\\repos\\Images\\annotated_image_examples"
 
 def main():
+    ia.seed(1)
+    
+    # Read in image
+    image = cv2.imread(os.path.join(IMAGE_DIR,IMAGE_NAME + ".jpg"))
+    image = ia.imresize_single_image(image, (298, 447))
+
+    bbs = BoundingBoxesOnImage([
+        
+        BoundingBox(x1=0.2*447, x2=0.85*447, y1=0.3*298, y2=0.95*298),
+        BoundingBox(x1=0.4*447, x2=0.65*447, y1=0.1*298, y2=0.4*298)
+    ], shape=image.shape)
+
+    ia.imshow(bbs.draw_on_image(image, size=2))
+
+def old_main():
     # Augmentations
     transform = A.Compose([
         A.HorizontalFlip(p=0.99),
@@ -59,13 +77,29 @@ def main():
 
     cv2.waitKey()
 
+def yoloToCv(_img, _annotation):
+    dh, dw, _ = _img.shape
+    _, x, y, w, h = map(float, _annotation.split(' '))
+
+    x1 = int((x - w / 2) * dw)
+    x2 = int((x + w / 2) * dw)
+    y1 = int((y - h / 2) * dh)
+    y2 = int((y + h / 2) * dh)
+
+    return x1,x2,y1,y2
+
+
+
 def showBoundingBox(_img, _annotations):
     dh, dw, _ = _img.shape
 
     for dt in _annotations:
-
-        # Split string to float
-        _, x, y, w, h = map(float, dt.split(' '))
+        print(type(dt))
+        if (isinstance(dt, str)):
+            # Split string to float
+            _, x, y, w, h = map(float, dt.split(' '))
+        else:
+            x, y, w, h =  dt
 
         # Taken from https://github.com/pjreddie/darknet/blob/810d7f797bdb2f021dbe65d2524c2ff6b8ab5c8b/src/image.c#L283-L291
         # via https://stackoverflow.com/questions/44544471/how-to-get-the-coordinates-of-the-bounding-box-in-yolo-object-detection#comment102178409_44592380
