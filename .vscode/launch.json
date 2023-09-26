@@ -25,6 +25,20 @@
             "env": {
                 "CONDA_DEFAULT_ENV": "imagehash"
               }
+        },
+        {
+            "name": "ImageAugment debugger",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                
+            ],
+            "env": {
+                "CONDA_DEFAULT_ENV": "tiptracking"
+              }
         }
     ]
 }
