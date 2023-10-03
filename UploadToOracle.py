@@ -53,24 +53,29 @@ def main():
     buckets = []
     existing_buckets = getAllBucketNames(object_storage_client, namespace_name, compartment_id)
 
-    # # Check that bucket does not already exist
-    # for bucket_num in range(num_buckets):
-    #     bucket_num += 1
-    #     bucket_name = "batch_" + f"{bucket_num:03d}"
-    #     buckets.append(bucket_name)
+    # Check that bucket does not already exist
+    for bucket_num in range(num_buckets):
+        bucket_num += 1
+        bucket_name = "batch_" + f"{bucket_num:03d}"
+        buckets.append(bucket_name)
 
-    #     if bucket_name not in existing_buckets:
-    #         # Create the bucket
-    #         object_storage_client.create_bucket(namespace_name=namespace_name,
-    #                                             create_bucket_details=oci.object_storage.models.CreateBucketDetails(
-    #                                                 name=bucket_name,
-    #                                                 compartment_id=compartment_id,
-    #                                             )
-    #         )
-    #         print(f"Bucket '{bucket_name}' created successfully in compartment '{compartment_id}'")
-    #     else:
-    #         print(f"Bucket '{bucket_name}' already exists in compartment")
+        if bucket_name not in existing_buckets:
+            # Create the bucket
+            object_storage_client.create_bucket(namespace_name=namespace_name,
+                                                create_bucket_details=oci.object_storage.models.CreateBucketDetails(
+                                                    name=bucket_name,
+                                                    compartment_id=compartment_id,
+                                                )
+            )
+            print(f"Bucket '{bucket_name}' created successfully in compartment '{compartment_id}'")
+        else:
+            print(f"Bucket '{bucket_name}' already exists in compartment")
 
+    for bucket in buckets:
+        deleteAllObjectsInBucket(object_storage_client, namespace_name, buckets[4])
+        object_storage_client.delete_bucket(namespace_name,bucket)
+
+    exit()
     # # Uncomment this to delete objects from bucket
     # deleteAllObjectsInBucket(object_storage_client, namespace_name, buckets[4])
     # exit()
