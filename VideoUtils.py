@@ -129,7 +129,7 @@ def getSelectFramesFromVideo(_videoPath, _frameList, _outputDir):
                 break
 
             # if two images then grab left
-            if isStereo(frame):
+            if isFrameStereo(frame):
                 frame = getLeftImage(frame)
 
             # output images into external folder
