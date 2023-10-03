@@ -27,7 +27,6 @@ MISSED_FILES_JSON = "missed_files.json"
 # Number of max processes allowed at a time
 CONCURRENCY= 7
 
-
 def main():
     sema = mp.BoundedSemaphore(CONCURRENCY)
     checkNumThreadsAndCPUs()

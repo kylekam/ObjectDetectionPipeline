@@ -2,15 +2,18 @@ from imagededup.methods import PHash, DHash, AHash
 from imagededup.utils import plot_duplicates
 import os
 import shutil
+from datetime import datetime
 
 # IMAGE_DIR = "E:\\Videos\\small_temp_raw_frames"
-SRC_DIR = "C:\\Users\\kkam\\Desktop\\filtered_frames\\filter_bucket"
-DEST_DIR = "C:\\Users\\kkam\\Desktop\\filtered_frames\\more_filtered"
+SRC_DIR = "C:\\Users\\kkam\\Desktop\\filtered_frames\\10_3_23_hamm_15\\filter_bucket"
+DEST_DIR = "C:\\Users\\kkam\\Desktop\\filtered_frames\\10_3_23_hamm_15\\more_filtered"
 BATCH_SIZE = 10000
+HAMM_DISTANCE = 15
 
 def main():    
     finished = False
     src_dir = SRC_DIR
+    startTime = datetime.now()
     while not finished:
         # Make sure dir has less than 10k images
         num_of_folders = breakFolderIntoBatches(src_dir, DEST_DIR, BATCH_SIZE)
@@ -44,7 +47,7 @@ def main():
         else:
             src_dir = filterBucket
             print("Filtering again")
-
+    print(f"Took {datetime.now() - startTime} to run")
 
 def findUniqueImages(_srcDir, _dstDir):
     """Uses PHash to filter _srcDir images and moves them to _dstDir"""
@@ -54,7 +57,9 @@ def findUniqueImages(_srcDir, _dstDir):
     # Generate encodings
     encodings = phasher.encode_images(image_dir=_srcDir)
     # Find duplicates using the generated encodings
-    duplicates = phasher.find_duplicates(encoding_map=encodings, search_method='brute_force')
+    duplicates = phasher.find_duplicates(encoding_map=encodings, 
+                                         search_method='brute_force', 
+                                         max_distance_threshold = HAMM_DISTANCE)
 
     seen = set()
     # Iterate over all files in dict
