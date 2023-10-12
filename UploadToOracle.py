@@ -7,6 +7,7 @@ from tqdm import tqdm
 import json
 import psutil
 import time
+import mimetypes
 
 from oci.data_labeling_service_dataplane.data_labeling_client import DataLabelingClient
 from oci.data_labeling_service.data_labeling_management_client import DataLabelingManagementClient
@@ -20,12 +21,26 @@ from oci.data_labeling_service_dataplane.models import CreateObjectStorageSource
 from oci.data_labeling_service_dataplane.models import CreateRecordDetails
 
 # IMAGE_DIR = "F:\\kyle_files\\Tip_Tracking_Stuff"
-IMAGE_DIR = "C:\\Users\\kkam\\repos\\Images\\delete_this_test_jpeg"
-BATCH_SIZE = 1000
+IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_2"
+# IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\temp_output"
+# IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_5_images"
+# IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_2_split\\batch_1.000"
+
+BATCH_SIZE = 500
 MISSED_FILES_JSON = "missed_files.json"
+VERSION_NUMBER = 0
 
 # Number of max processes allowed at a time
-CONCURRENCY= 7
+CONCURRENCY = 20
+
+LABELS = [
+    "Forceps",
+    "Dissector",
+    "Micro_Needle_Holder",
+    "Suction_Cannula",
+    "Bone_Drill",
+    "Ultrasonic_Aspirator",
+]
 
 def main():
     sema = mp.BoundedSemaphore(CONCURRENCY)
@@ -33,7 +48,13 @@ def main():
 
     # OCI Setup
     config = oci.config.from_file("~/.oci/config", "DEFAULT")
-    compartment_id = "ocid1.compartment.oc1..aaaaaaaabgnhnke36wn27m7ar5sua34hbbzugxvniyymjvl4iuhkrzsemidq"
+
+    # config['region'] = 'us-sanjose-1'
+    # compartment_id = "ocid1.compartment.oc1..aaaaaaaabgnhnke36wn27m7ar5sua34hbbzugxvniyymjvl4iuhkrzsemidq" # testing
+    # compartment_id = "ocid1.compartment.oc1..aaaaaaaayxoy46cizaayaxd4vinvtkdavemhrsmfvgym7efkteue35tjsaca" # actual dataset
+    # compartment_id = "ocid1.compartment.oc1..aaaaaaaayxoy46cizaayaxd4vinvtkdavemhrsmfvgym7efkteue35tjsaca" # tiptracking_labeling
+    compartment_id = "ocid1.compartment.oc1..aaaaaaaajcq5drsooqi2hb4v74tbxkba27hqz5guhqfjiem3i6elifrjfn2q" # tiptracking_1
+    
     namespace_name = "idrvtcm33fob"
 
     # Create an Object Storage client
@@ -55,7 +76,7 @@ def main():
     # Check that bucket does not already exist
     for bucket_num in range(num_buckets):
         bucket_num += 1
-        bucket_name = "batch_" + f"{bucket_num:03d}"
+        bucket_name = "batch_" + f"{VERSION_NUMBER}.{bucket_num:03d}"
         buckets.append(bucket_name)
 
         if bucket_name not in existing_buckets:
@@ -70,45 +91,44 @@ def main():
         else:
             print(f"Bucket '{bucket_name}' already exists in compartment")
 
-    for bucket in buckets:
-        deleteAllObjectsInBucket(object_storage_client, namespace_name, buckets[4])
-        object_storage_client.delete_bucket(namespace_name,bucket)
+    # for bucket in tqdm(existing_buckets, desc="Deleting buckets:", colour="green"):
+    #     deleteAllObjectsInBucket(object_storage_client, namespace_name, bucket)
+    #     object_storage_client.delete_bucket(namespace_name,bucket)
 
-    exit()
-    # # Uncomment this to delete objects from bucket
-    # deleteAllObjectsInBucket(object_storage_client, namespace_name, buckets[4])
+    # deleteDatasets(config, compartment_id)
+
     # exit()
 
-    # # Upload images
-    # for i in range(3,num_buckets):
-    #     start_idx = BATCH_SIZE*i
-    #     end_idx = BATCH_SIZE*(i+1) if BATCH_SIZE*(i+1) < num_files else num_files-1 # ensures that we don't go out of range
-    #     filebatch = all_files[start_idx:end_idx]
-    #     parallelUpload(filebatch, buckets[i], namespace_name, config, sema)
+    # Upload images
+    for i in range(num_buckets):
+        start_idx = BATCH_SIZE*i
+        end_idx = BATCH_SIZE*(i+1) if BATCH_SIZE*(i+1) < num_files else num_files # ensures that we don't go out of range
+        filebatch = all_files[start_idx:end_idx]
+        parallelUpload(filebatch, buckets[i], namespace_name, config, sema)
 
-    # # Find which images are missing
-    # missed = {}
-    # for i in range(num_buckets):
-    #     start_idx = BATCH_SIZE*i
-    #     end_idx = BATCH_SIZE*(i+1) if BATCH_SIZE*(i+1) < num_files else num_files-1 # ensures that we don't go out of range
-    #     filebatch = all_files[start_idx:end_idx]
+    # Find which images are missing
+    missed = {}
+    for i in range(num_buckets):
+        start_idx = BATCH_SIZE*i
+        end_idx = BATCH_SIZE*(i+1) if BATCH_SIZE*(i+1) < num_files else num_files-1 # ensures that we don't go out of range
+        filebatch = all_files[start_idx:end_idx]
 
-    #     # Verify that all files were uploaded
-    #     objects = getObjectNamesInBucket(object_storage_client, namespace_name, buckets[i])
-    #     missed[buckets[i]] = []
-    #     for file_name in filebatch:
-    #         if os.path.basename(file_name) not in objects:
-    #             missed[buckets[i]].append(file_name)
-    #     print(f"Files missed: '{len(missed[buckets[i]])}'")
+        # Verify that all files were uploaded
+        objects = getObjectNamesInBucket(object_storage_client, namespace_name, buckets[i])
+        missed[buckets[i]] = []
+        for file_name in filebatch:
+            if os.path.basename(file_name) not in objects:
+                missed[buckets[i]].append(file_name)
+        print(f"Files missed: '{len(missed[buckets[i]])}'")
 
-    # # Write missed files to json
-    # with open(MISSED_FILES_JSON, "w") as outfile:
-    #     outfile.write(json.dumps(missed, indent=4))
+    # Write missed files to json
+    with open(MISSED_FILES_JSON, "w") as outfile:
+        outfile.write(json.dumps(missed, indent=4))
 
     # Create data labeling service 
-    temp_bucket_name = "delete_this_test_jpeg"
-    response = createDatasetFromBucket(object_storage_client, config, compartment_id, namespace_name, temp_bucket_name)
-    print(response)
+    for i in range(num_buckets):   
+        response = createDatasetFromBucket(object_storage_client, config, compartment_id, namespace_name, buckets[i], LABELS)
+        print(response)
 
     # 5. Bonus: Create excel sheet
 
@@ -119,7 +139,7 @@ def parallelUpload(_src_list: list, _dst_bucket: str, _namespace_name: str, _con
 
     # print("Starting upload for {}".format(_dst_bucket))
     proc_list = []
-    for file_path in tqdm(_src_list, desc=f"Uploading {_dst_bucket}"):
+    for file_path in tqdm(_src_list, desc=f"Uploading {_dst_bucket}", colour="green"):
         _sema.acquire()
         # print("Starting upload for {}".format(file_path))
         p = mp.Process(target=upload_to_object_storage, args=(_config,
@@ -131,7 +151,7 @@ def parallelUpload(_src_list: list, _dst_bucket: str, _namespace_name: str, _con
         proc_list.append(p)
 
     # Upload files
-    for job in tqdm(proc_list, desc=f"Verifying {_dst_bucket}"):
+    for job in tqdm(proc_list, desc=f"Verifying {_dst_bucket}", colour="green"):
         job.join()
 
 def getAllBucketNames(_object_storage_client, _namespace_name, _compartment_id):
@@ -186,12 +206,14 @@ def upload_to_object_storage(_config, _namespace, _bucket, _path, _sema):
     :rtype: None
     """
     with open(_path, "rb") as in_file:
+        mimetype, _ = mimetypes.guess_type(_path)
         name = os.path.basename(_path)
         ostorage = oci.object_storage.ObjectStorageClient(_config)
-        ostorage.put_object(_namespace,
-                            _bucket,
-                            name,
-                            in_file)
+        ostorage.put_object(namespace_name=_namespace,
+                            bucket_name=_bucket,
+                            object_name=name,
+                            content_type=mimetype,
+                            put_object_body=in_file)
         # print("Finished uploading {}".format(name))
     _sema.release()
 
@@ -222,7 +244,6 @@ def getDatasetState(_dl_client, _compartment_id, _dataset_name):
 
 def downloadAllObjectsFromBucket(_dst_dir, _obj_storage_client, _compartment_id, _bucket_name):
     namespace = _obj_storage_client.get_namespace().data
-
     list_objects = getObjectsInBucket(_obj_storage_client, namespace, _bucket_name)
 
     for obj in tqdm(list_objects, desc="Downloading objects"):
@@ -248,22 +269,76 @@ def init_dls_dp_client(_config, _service_endpoint):
                                     service_endpoint=_service_endpoint)
     return dls_client
 
-def createDatasetFromBucket(_object_storage_client, _config, _compartment_id, _namespace, _bucket):
+# Define a function to list all dataset OCIDs in the current compartment
+def getDatasetOCIDs(_config, _compartment_id):
+    """
+    Returns a list of OCIDs for each dataset in the compartment.
+    """
+    dataset_ocids = []
+
+    dls_cp_client = oci.data_labeling_service.DataLabelingManagementClient(_config)
+
+    # Create a request to list datasets in the current compartment
+    datasets_list = dls_cp_client.list_datasets(compartment_id=_compartment_id)
+
+    # List datasets and collect their OCIDs
+    try:
+        for dataset in datasets_list.data.items:
+            dataset_ocids.append(dataset.id)
+    except oci.exceptions.ServiceError as e:
+        print(f"Error listing datasets: {e}")
+
+    return dataset_ocids
+
+def getDatasetNames(_config, _compartment_id):
+    """
+    Returns a list of names for each dataset in the compartment.
+    """
+    dataset_names = []
+
+    dls_cp_client = oci.data_labeling_service.DataLabelingManagementClient(_config)
+
+    # Create a request to list datasets in the current compartment
+    datasets_list = dls_cp_client.list_datasets(compartment_id=_compartment_id)
+
+    # List datasets and collect their OCIDs
+    try:
+        for dataset in datasets_list.data.items:
+            dataset_names.append(dataset.display_name)
+    except oci.exceptions.ServiceError as e:
+        print(f"Error listing datasets: {e}")
+
+    return dataset_names
+
+def deleteDatasets(_config, _compartment_id):
+    """
+    Deletes all the datasets in the _compartment_id
+    """
+    dataset_ocids = getDatasetOCIDs(_config, _compartment_id)
+    dataset_names = getDatasetNames(_config, _compartment_id)
+
+    dls_cp_client = oci.data_labeling_service.DataLabelingManagementClient(_config)
+    for ocid,display_name in tqdm(zip(dataset_ocids,dataset_names), desc="Deleting datasets:", colour="green"):
+        dataset_state = getDatasetState(dls_cp_client, _compartment_id, display_name)
+        if dataset_state == "DELETED":
+            continue
+        dls_cp_client.delete_dataset(ocid)
+    return
+
+def createDatasetFromBucket(_object_storage_client, _config, _compartment_id, _namespace, _bucket, _labels):
     # Init dataset settings
     format_type = "IMAGE"
     annotation_format = "BOUNDING_BOX"
-    label1 = "tooltip"
-    label2 = "zack"
-    display_name = "delete_this_test_jpeg"
+    display_name = _bucket
     dls_cp_client = oci.data_labeling_service.DataLabelingManagementClient(_config)
     dls_dp_client = oci.data_labeling_service_dataplane.DataLabelingClient(_config)
     dataset_source_details_obj = ObjectStorageSourceDetails(namespace=_namespace, bucket=_bucket)
     dataset_format_details_obj = DatasetFormatDetails(format_type=format_type)
-    label_set_obj = LabelSet(items=[Label(name=label1), Label(name=label2)])
+    label_set_obj = LabelSet(items=[Label(name=label) for label in _labels])
 
     # make sure dataset name isn't already taken
     dataset_names = getAllDatasetNames(dls_cp_client, _compartment_id)
-    if display_name not in dataset_names:
+    if display_name: #not in dataset_names:
         create_dataset_obj = CreateDatasetDetails(
             compartment_id=_compartment_id, 
             annotation_format=annotation_format,
@@ -277,7 +352,6 @@ def createDatasetFromBucket(_object_storage_client, _config, _compartment_id, _n
 
         # Wait for the dataset to be in active state
         print("Waiting for dataset to finish creating...")
-
         
     else:
         dataset_id = getDatasetID(dls_cp_client, _compartment_id, display_name)
@@ -285,7 +359,7 @@ def createDatasetFromBucket(_object_storage_client, _config, _compartment_id, _n
     
     # Wait for the dataset to be in active state
     dataset_state = 'CREATING'
-    while (dataset_state != 'ACTIVE'):
+    while ((dataset_state != 'ACTIVE') and (dataset_state != 'FAILED')):
         dataset_state = getDatasetState(dls_cp_client, _compartment_id, display_name)
         time.sleep(0.1)
     print("Done creating!")
