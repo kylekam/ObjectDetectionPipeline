@@ -21,14 +21,15 @@ from oci.data_labeling_service_dataplane.models import CreateObjectStorageSource
 from oci.data_labeling_service_dataplane.models import CreateRecordDetails
 
 # IMAGE_DIR = "F:\\kyle_files\\Tip_Tracking_Stuff"
-IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_2"
+# IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_2"
 # IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\temp_output"
 # IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_5_images"
 # IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_2_split\\batch_1.000"
+IMAGE_DIR = "F:\\kyle_files\\image_labeling_yolov4\\all_images_filtered\\final"
 
-BATCH_SIZE = 500
+BATCH_SIZE = 300
 MISSED_FILES_JSON = "missed_files.json"
-VERSION_NUMBER = 0
+VERSION_NUMBER = 1
 
 # Number of max processes allowed at a time
 CONCURRENCY = 20
@@ -53,7 +54,8 @@ def main():
     # compartment_id = "ocid1.compartment.oc1..aaaaaaaabgnhnke36wn27m7ar5sua34hbbzugxvniyymjvl4iuhkrzsemidq" # testing
     # compartment_id = "ocid1.compartment.oc1..aaaaaaaayxoy46cizaayaxd4vinvtkdavemhrsmfvgym7efkteue35tjsaca" # actual dataset
     # compartment_id = "ocid1.compartment.oc1..aaaaaaaayxoy46cizaayaxd4vinvtkdavemhrsmfvgym7efkteue35tjsaca" # tiptracking_labeling
-    compartment_id = "ocid1.compartment.oc1..aaaaaaaajcq5drsooqi2hb4v74tbxkba27hqz5guhqfjiem3i6elifrjfn2q" # tiptracking_1
+    # compartment_id = "ocid1.compartment.oc1..aaaaaaaajcq5drsooqi2hb4v74tbxkba27hqz5guhqfjiem3i6elifrjfn2q" # tiptracking_1
+    compartment_id = "ocid1.compartment.oc1..aaaaaaaa3aj25opwthzbq443gwzw26ywtodryq7z7rcc6dvh4wbjjp7md3sa" # tiptracking_2
     
     namespace_name = "idrvtcm33fob"
 
@@ -358,8 +360,9 @@ def createDatasetFromBucket(_object_storage_client, _config, _compartment_id, _n
 
     
     # Wait for the dataset to be in active state
+    # TODO: make the the dataset creation stall until the records are generated
     dataset_state = 'CREATING'
-    while ((dataset_state != 'ACTIVE') and (dataset_state != 'FAILED')):
+    while (((dataset_state != 'ACTIVE') and (dataset_state != 'FAILED')) or (dataset_state == 'UPDATING')):
         dataset_state = getDatasetState(dls_cp_client, _compartment_id, display_name)
         time.sleep(0.1)
     print("Done creating!")
