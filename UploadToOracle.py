@@ -27,7 +27,7 @@ from oci.data_labeling_service_dataplane.models import CreateRecordDetails
 # IMAGE_DIR = "C:\\Users\\kkam\\Desktop\\tip_tracking_dataset_2_split\\batch_1.000"
 IMAGE_DIR = "F:\\kyle_files\\image_labeling_yolov4\\all_images_filtered\\final"
 
-BATCH_SIZE = 300
+BATCH_SIZE = 500
 MISSED_FILES_JSON = "missed_files.json"
 VERSION_NUMBER = 1
 
@@ -54,8 +54,8 @@ def main():
     # compartment_id = "ocid1.compartment.oc1..aaaaaaaabgnhnke36wn27m7ar5sua34hbbzugxvniyymjvl4iuhkrzsemidq" # testing
     # compartment_id = "ocid1.compartment.oc1..aaaaaaaayxoy46cizaayaxd4vinvtkdavemhrsmfvgym7efkteue35tjsaca" # actual dataset
     # compartment_id = "ocid1.compartment.oc1..aaaaaaaayxoy46cizaayaxd4vinvtkdavemhrsmfvgym7efkteue35tjsaca" # tiptracking_labeling
-    # compartment_id = "ocid1.compartment.oc1..aaaaaaaajcq5drsooqi2hb4v74tbxkba27hqz5guhqfjiem3i6elifrjfn2q" # tiptracking_1
-    compartment_id = "ocid1.compartment.oc1..aaaaaaaa3aj25opwthzbq443gwzw26ywtodryq7z7rcc6dvh4wbjjp7md3sa" # tiptracking_2
+    compartment_id = "ocid1.compartment.oc1..aaaaaaaajcq5drsooqi2hb4v74tbxkba27hqz5guhqfjiem3i6elifrjfn2q" # tiptracking_1
+    # compartment_id = "ocid1.compartment.oc1..aaaaaaaa3aj25opwthzbq443gwzw26ywtodryq7z7rcc6dvh4wbjjp7md3sa" # tiptracking_2
     
     namespace_name = "idrvtcm33fob"
 
@@ -70,13 +70,37 @@ def main():
         all_files.append(filename)
     num_files = len(all_files)
 
-    # Create proper amount of buckets
-    num_buckets = int(math.ceil(float(num_files)/BATCH_SIZE))
-    buckets = []
     existing_buckets = getAllBucketNames(object_storage_client, namespace_name, compartment_id)
 
+    # if buckets with "batch_" exist, fill existing bucket
+    last_bucket_num = 0
+    backfill_amount = 0
+    if existing_buckets:
+        existing_buckets.sort()
+        last_bucket_name = existing_buckets[-1]
+        last_bucket_num =int(last_bucket_name.split(".")[1])
+
+        # Check if most recent bucket is full
+        num_objects = getNumOfObjectsInBucket(object_storage_client,namespace_name,last_bucket_name)
+        # if not full, then fill the difference with images
+        if num_objects < BATCH_SIZE:
+            backfill_amount = BATCH_SIZE-num_objects
+
+            start_idx = 0
+            end_idx = backfill_amount if backfill_amount < num_files else num_files # ensures that we don't go out of range
+            filebatch = all_files[start_idx:end_idx]
+            parallelUpload(filebatch, last_bucket_name, namespace_name, config, sema)
+            all_files = all_files[end_idx:]
+            
+    # Create proper amount of buckets for num of images left
+    num_buckets = int(math.ceil(float(num_files - backfill_amount)/BATCH_SIZE))
+    buckets = []
+    # fill buckets with images
+    # create data labeling service
+    
     # Check that bucket does not already exist
-    for bucket_num in range(num_buckets):
+    ## get the last batch number and shift all numbers by that value
+    for bucket_num in range(last_bucket_num, num_buckets+last_bucket_num):
         bucket_num += 1
         bucket_name = "batch_" + f"{VERSION_NUMBER}.{bucket_num:03d}"
         buckets.append(bucket_name)
@@ -108,6 +132,7 @@ def main():
         filebatch = all_files[start_idx:end_idx]
         parallelUpload(filebatch, buckets[i], namespace_name, config, sema)
 
+    # DEPRECATED
     # Find which images are missing
     missed = {}
     for i in range(num_buckets):
@@ -122,7 +147,6 @@ def main():
             if os.path.basename(file_name) not in objects:
                 missed[buckets[i]].append(file_name)
         print(f"Files missed: '{len(missed[buckets[i]])}'")
-
     # Write missed files to json
     with open(MISSED_FILES_JSON, "w") as outfile:
         outfile.write(json.dumps(missed, indent=4))
@@ -178,9 +202,18 @@ def deleteAllObjectsInBucket(_object_storage_client, _namespace_name, _bucket_na
         _object_storage_client.delete_object(namespace_name=_namespace_name, bucket_name=_bucket_name, object_name=object_name)
 
 def getNumOfObjectsInBucket(_object_storage_client, _namespace_name, _bucket_name):
+    '''
+    Returns number of objects in a bucket. Does not include DLS records.
+    '''
     # List the objects in the bucket
     list_objects_response = _object_storage_client.list_objects(namespace_name=_namespace_name, bucket_name=_bucket_name)
-    return len(list_objects_response.data.objects)
+    
+    # Do not count objects that are records
+    count = 0
+    for obj in list_objects_response.data.objects:
+        if "ocid" not in obj.name:
+            count += 1
+    return count
 
 def getObjectsInBucket(_object_storage_client, _namespace_name, _bucket_name):
     # List the objects in the bucket
