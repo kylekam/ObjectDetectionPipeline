@@ -5,9 +5,7 @@ import VideoUtils
 from PIL import Image
 import os
 from yolov8 import YOLOv8
-from yolov8.utils import draw_detections 
 
-# VIDEO_PATH = "F:\\kyle_files\\repos\\RefineImageDataset\\used_videos\\4828b9ac-f90f-4dc7-bab0-5264dcdbf1f5.avi"
 VIDEO_PATH = "D:\Datasets\Samples\SurgicalVideos"
 MODEL_PATH = ".\\models\\tool_tip_v4.onnx"
 # MODEL_PATH = ".\\models\\yolov8s.onnx"
@@ -20,9 +18,11 @@ TRACKED_CLASS = 0
 MODEL_INPUT_WIDTH = 640
 MODEL_INPUT_HEIGHT = 640
 CLASS_ID = 0
+CLASS_NAMES = ["tool_tip"]
 
 def main():
-    yolov8_detector = YOLOv8(MODEL_PATH, conf_thres=CONF_THRESHOLD, iou_thres=IOU_THRESHOLD)
+    yolov8_detector = YOLOv8(path=MODEL_PATH, class_names=CLASS_NAMES,
+                             conf_thres=CONF_THRESHOLD, iou_thres=IOU_THRESHOLD)
 
     cv2.namedWindow("Detected Objects", cv2.WINDOW_NORMAL)
 
@@ -41,6 +41,7 @@ def main():
     # Create video writer
     output_file_name = os.path.join(OUTPUT_PATH,VIDEO_FILE.split(".")[0]+"_PROCESSED.mp4")
     fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = 15 #TODO: remove this cuz surgery video is broken
     output_video = cv2.VideoWriter(output_file_name, 0x7634706d, fps, (int(frame_width), frame_height))
 
     # Check if the video file opened successfully
@@ -52,7 +53,6 @@ def main():
         # Press key q to stop
         if cv2.waitKey(1) == ord('q'):
             break
-
         try:
             # Read frame from the video
             ret, frame = cap.read()
@@ -73,7 +73,7 @@ def main():
                 tracked_scores.append(scores[i])
                 tracked_class_ids.append(class_ids[i])
 
-        combined_img = draw_detections(
+        combined_img = yolov8_detector.utils.draw_detections(
             image=frame,
             boxes=tracked_boxes,
             scores=tracked_scores,
